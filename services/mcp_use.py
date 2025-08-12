@@ -1,4 +1,5 @@
 import json
+
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from mcp_use import MCPClient, MCPAgent
@@ -19,43 +20,49 @@ def _sse(event: str | None = None, data: dict | str | None = None) -> str:
         parts.append(f"data: {data}")
     return "\n".join(parts) + "\n\n"
 
-async def stream_superset_dashboards():
-    """
-    Async generator that yields SSE frames while the MCP agent runs.
-    - Emits `event: step` for each (action, observation)
-    - Emits `event: final` once with the final answer
-    - Ends with a [DONE] sentinel
-    """
+
+async def stream_mcp():
     load_dotenv()
 
     client = MCPClient.from_dict(server_config)
     llm = ChatOpenAI(model="gpt-4o", streaming=True)
     agent = MCPAgent(llm=llm, client=client, max_steps=30)
 
-    # optional: notify client we've started
     yield _sse(event="status", data={"message": "starting"})
 
+    last_labels_only = None  # <--- capture labels from tool
+
     try:
-        async for chunk in agent.stream("List all Superset dashboard for me"):
+        async for chunk in agent.stream("Drone nông nghiệp có thể phun thuốc chính xác đến từng cây không?"):
             if isinstance(chunk, str):
-                # Final answer from the agent
-                yield _sse(event="final", data={"text": chunk})
+                # Instead of forwarding the LLM prose, prefer labels if we have them
+                if last_labels_only is not None:
+                    yield _sse(event="final", data={"labels": last_labels_only})
+                else:
+                    yield _sse(event="final", data={"text": chunk})
             else:
                 action, observation = chunk
+
+                # Try to capture labels from classify_tech output
+                if action.tool == "classify_tech" and isinstance(observation, str):
+                    try:
+                        obj = json.loads(observation)
+                        top = obj.get("top_labels", [])
+                        last_labels_only = [item["label"] for item in top if "label" in item]
+                    except Exception:
+                        pass  # keep streaming anyway
+
+                # Optional: keep sending step frames for debugging
                 yield _sse(
                     event="step",
                     data={
                         "tool": action.tool,
                         "input": action.tool_input,
-                        # Truncate long outputs to keep the stream snappy
                         "output": observation[:2000] if isinstance(observation, str) else observation,
                     },
                 )
-        # Matching many streaming APIs, send a termination signal
+
         yield _sse(data="[DONE]")
     except Exception as e:
-        # Send an error frame so the client can handle it gracefully
         yield _sse(event="error", data={"message": str(e)})
-        # Also send a DONE to close out nicely
         yield _sse(data="[DONE]")
-    # If MCPClient exposes explicit close methods, you could call them here.
