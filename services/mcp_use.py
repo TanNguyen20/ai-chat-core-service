@@ -16,9 +16,39 @@ def _sse(event: str | None = None, data: dict | str | None = None) -> str:
     if data is not None:
         if not isinstance(data, str):
             data = json.dumps(data, ensure_ascii=False)
-        # SSE allows multiple data lines; keep it simple:
         parts.append(f"data: {data}")
     return "\n".join(parts) + "\n\n"
+
+
+def _extract_labels(observation) -> list[str] | None:
+    """
+    Try to extract labels from any observation payload.
+    Supports:
+      - {"labels": [...]}  # new unified schema
+      - {"top_labels": [{"label": "...", "confidence": ...}, ...]}  # legacy rich schema
+    Accepts str (JSON) or dict.
+    Returns list[str] or None.
+    """
+    try:
+        obj = observation
+        if isinstance(observation, str):
+            obj = json.loads(observation)
+        if not isinstance(obj, dict):
+            return None
+
+        if "labels" in obj and isinstance(obj["labels"], list):
+            return [str(x) for x in obj["labels"] if isinstance(x, (str, int, float))]
+
+        if "top_labels" in obj and isinstance(obj["top_labels"], list):
+            out = []
+            for item in obj["top_labels"]:
+                if isinstance(item, dict) and "label" in item:
+                    out.append(str(item["label"]))
+            return out or None
+
+        return None
+    except Exception:
+        return None
 
 
 async def stream_mcp():
@@ -30,39 +60,37 @@ async def stream_mcp():
 
     yield _sse(event="status", data={"message": "starting"})
 
-    last_labels_only = None  # <--- capture labels from tool
+    last_labels_only: list[str] | None = None
 
     try:
         async for chunk in agent.stream("Drone nông nghiệp có thể phun thuốc chính xác đến từng cây không?"):
             if isinstance(chunk, str):
-                # Instead of forwarding the LLM prose, prefer labels if we have them
-                if last_labels_only is not None:
+                # Final model message. Prefer labels if we captured any.
+                if last_labels_only:
                     yield _sse(event="final", data={"labels": last_labels_only})
                 else:
                     yield _sse(event="final", data={"text": chunk})
             else:
                 action, observation = chunk
 
-                # Try to capture labels from classify_tech output
-                if action.tool == "classify_tech" and isinstance(observation, str):
-                    try:
-                        obj = json.loads(observation)
-                        top = obj.get("top_labels", [])
-                        last_labels_only = [item["label"] for item in top if "label" in item]
-                    except Exception:
-                        pass  # keep streaming anyway
+                # Try to extract labels from ANY tool observation (no tool-name checks)
+                labels = _extract_labels(observation)
+                if labels:
+                    last_labels_only = labels
 
-                # Optional: keep sending step frames for debugging
+                # Optional: forward step frames for debugging/telemetry
                 yield _sse(
                     event="step",
                     data={
-                        "tool": action.tool,
-                        "input": action.tool_input,
+                        "tool": getattr(action, "tool", None),
+                        "input": getattr(action, "tool_input", None),
                         "output": observation[:2000] if isinstance(observation, str) else observation,
                     },
                 )
 
+        # Stream termination sentinel
         yield _sse(data="[DONE]")
+
     except Exception as e:
         yield _sse(event="error", data={"message": str(e)})
         yield _sse(data="[DONE]")
