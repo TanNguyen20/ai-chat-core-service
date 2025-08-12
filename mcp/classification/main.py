@@ -79,113 +79,133 @@ mcp = FastMCP(
 # ====== Tool ======
 @mcp.tool(
     name="classify_tech",
-    description="Phân loại câu hỏi vào 14 lĩnh vực công nghệ VN, trả về top-k nhãn với confidence.",
+    description="Phân loại câu hỏi vào 14 lĩnh vực công nghệ VN.",
     tags={"public", "classification"},
 )
-def classify_tech(query: str, top_k: int = 3, language: str = "vi") -> ClassifyResult:
-    """
-    Parameters
-    ----------
-    query : Nội dung người dùng (tiếng Việt hoặc ngôn ngữ khác).
-    top_k : Số nhãn muốn lấy (1..5).
-    language : Ngôn ngữ phần giải thích ('vi'/'en').
-
-    Returns
-    -------
-    ClassifyResult
-    """
+def classify_tech(
+    query: str,
+    top_k: int = 3,
+    language: str = "vi",
+    labels_only: bool = True,  # <-- default: labels-only
+):
     top_k = max(1, min(5, int(top_k)))
 
     system_prompt = f"""
 Bạn là bộ phân loại nội dung theo 14 lĩnh vực công nghệ (Việt Nam).
-Chỉ chọn từ danh sách cố định dưới đây, có thể nhiều nhãn nếu hợp lý.
-Trả JSON đúng schema yêu cầu.
-
-DANH SÁCH NHÃN HỢP LỆ (14):
-{CATEGORIES}
-
-Nguyên tắc:
-- Cho điểm "confidence" (0.0-1.0) cho từng nhãn.
-- Sắp xếp nhãn theo độ phù hợp giảm dần.
-- 'suggested_next_actions' tối đa 3 gợi ý ngắn (tùy chọn).
+Chỉ chọn nhãn từ danh sách: {CATEGORIES}
+Nếu 'labels_only' là true: chỉ trả JSON {{ "labels": [<nhãn> ...] }}.
+Nếu false: trả JSON đầy đủ theo schema mở rộng.
+Ngôn ngữ giải thích = '{language}'.
 """
 
-    # ---- FIXED SCHEMA (strict + required includes every property) ----
-    json_schema = {
-        "name": "classification_schema",
-        "schema": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string"},
-                "top_labels": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "label": {"type": "string", "enum": CATEGORIES},
-                            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-                        },
-                        "required": ["label", "confidence"],
-                        "additionalProperties": False,
-                    },
-                    "minItems": 1,
-                    "maxItems": 5,
-                }
+    # ---- Two schemas: tiny labels-only (default) or full ----
+    if labels_only:
+        json_schema = {
+            "name": "labels_only_schema",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "labels": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": CATEGORIES},
+                        "minItems": 1,
+                        "maxItems": 5
+                    }
+                },
+                "required": ["labels"],
+                "additionalProperties": False,
             },
-            # strict: True requires every property to be listed here:
-            "required": ["query", "top_labels"],
-            "additionalProperties": False,
-        },
-        "strict": True,
-    }
+            "strict": True,
+        }
+    else:
+        json_schema = {
+            "name": "classification_schema",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "top_labels": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "label": {"type": "string", "enum": CATEGORIES},
+                                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                            },
+                            "required": ["label", "confidence"],
+                            "additionalProperties": False,
+                        },
+                        "minItems": 1,
+                        "maxItems": 5,
+                    },
+                    "rationale": {"type": "string"},
+                    "suggested_next_actions": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "maxItems": 3,
+                        "default": []
+                    },
+                },
+                "required": ["query", "top_labels", "rationale", "suggested_next_actions"],
+                "additionalProperties": False,
+            },
+            "strict": True,
+        }
 
-    # --- Helpers for Responses API path ---
+    # --- Responses API call (with fallback as you already had) ---
     def _call_responses_api():
         return client.responses.create(
             model=OPENAI_MODEL,
             input=[
                 {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
-                {"role": "user",   "content": [{"type": "text", "text": query}]},
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": f"labels_only={labels_only}\n\n{query}"}],
+                },
             ],
             response_format={"type": "json_schema", "json_schema": json_schema},
             temperature=0,
         )
 
     def _extract_json_from_responses(resp) -> str:
-        # Prefer convenience property if present
         data = getattr(resp, "output_text", None)
         if data:
             return data
-        # Walk output blocks (SDK internal structure)
         for item in getattr(resp, "output", []) or []:
             for c in getattr(item, "content", []) or []:
                 if getattr(c, "type", "") == "output_text" and getattr(c, "text", None):
                     return c.text
         raise RuntimeError("No JSON text found in Responses output")
 
-    # --- Main call with graceful fallback to Chat Completions if needed ---
     try:
         resp = _call_responses_api()
         data = _extract_json_from_responses(resp)
     except TypeError:
-        # Environment still on older SDK: use Chat Completions with structured outputs
+        # Fallback for older SDKs
         resp = client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": query},
+                {"role": "user", "content": f"labels_only={labels_only}\n\n{query}"},
             ],
             response_format={"type": "json_schema", "json_schema": json_schema},
             temperature=0,
         )
         data = resp.choices[0].message.content or "{}"
 
-    # --- Parse + post-process ---
-    parsed = json.loads(data)
-    parsed["query"] = query
-    parsed["top_labels"] = parsed.get("top_labels", [])[:top_k]
-    parsed.setdefault("suggested_next_actions", [])  # extra safety
-    return parsed  # FastMCP will serialize as JSON
+    import json as _json
+    parsed = _json.loads(data)
+
+    if labels_only:
+        # Ensure at most top_k labels
+        labels = parsed.get("labels", [])
+        parsed = {"labels": labels[:top_k]}
+    else:
+        parsed["query"] = query
+        parsed["top_labels"] = parsed.get("top_labels", [])[:top_k]
+        parsed.setdefault("suggested_next_actions", [])
+
+    return parsed
 
 if __name__ == "__main__":
     # Default: STDIO transport (works with MCP-compatible clients)
