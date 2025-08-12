@@ -13,6 +13,17 @@ server_config = {
                 "mcp", "run",
                 "F:/ai-core-service/mcp-server/superset-mcp/main.py",
             ],
+        },
+        "VN-Tech-Classifier": {
+            "command": "uv",
+            "args": [
+                "run",
+                "--with",
+                "fastmcp",
+                "fastmcp",
+                "run",
+                "..\\mcp\\classification\\main.py"
+            ]
         }
     }
 }
