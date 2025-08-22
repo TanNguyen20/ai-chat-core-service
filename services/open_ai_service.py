@@ -7,9 +7,17 @@ from openai import OpenAI
 
 from utils.common import sse, heartbeat
 
-openai.api_key = os.environ["OPENAI_API_KEY"]
 
-client = OpenAI()
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+HF_TOKEN = os.environ.get("HF_TOKEN", "")
+
+if not HF_TOKEN:
+    client = OpenAI()
+else:
+    client = OpenAI(
+        base_url="https://router.huggingface.co/v1",
+        api_key=HF_TOKEN,
+    )
 
 
 class OpenAIService:
