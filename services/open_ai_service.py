@@ -13,18 +13,19 @@ HF_TOKEN = os.environ.get("HF_TOKEN", "")
 
 if not HF_TOKEN:
     client = OpenAI()
+    model_name="gpt-4o"
 else:
     client = OpenAI(
         base_url="https://router.huggingface.co/v1",
         api_key=HF_TOKEN,
     )
-
+    model_name="openai/gpt-oss-120b"
 
 class OpenAIService:
     @staticmethod
     def sumary_files():
         response = client.responses.create(
-            model="gpt-5",
+            model=model_name,
             input=[
                 {
                     "role": "user",
@@ -51,15 +52,14 @@ class OpenAIService:
         Event sequence: start -> (delta...)+ -> end  OR start -> error -> end
         """
         rid = f"resp_{int(time.time() * 1000)}"
-        model = "gpt-4o-mini"
 
         # 1) start
-        yield sse("start", {"id": rid, "model": model, "created": int(time.time())})
+        yield sse("start", {"id": rid, "model": model_name, "created": int(time.time())})
 
         last_heartbeat = time.time()
         try:
             stream = client.chat.completions.create(
-                model=model,
+                model=model_name,
                 messages=[
                     {"role": "system", "content": "You are a helpful assistant."},
                     {"role": "user", "content": prompt},
