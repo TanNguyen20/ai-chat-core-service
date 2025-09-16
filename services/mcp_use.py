@@ -40,7 +40,8 @@ async def stream_mcp(question: str):
     """
     load_dotenv()
 
-    client = MCPClient.from_dict(server_config)
+    # client = MCPClient.from_dict(server_config)
+    client = MCPClient.from_dict({})
     llm = ChatOpenAI(model="gpt-4o", streaming=True)
     agent = MCPAgent(llm=llm, client=client, max_steps=30)
 
