@@ -19,7 +19,7 @@ else:
         base_url="https://router.huggingface.co/v1",
         api_key=HF_TOKEN,
     )
-    model_name="openai/gpt-oss-120b"
+    model_name="openai/gpt-oss-120b:cerebras"
 
 class OpenAIService:
     @staticmethod
