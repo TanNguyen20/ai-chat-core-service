@@ -42,7 +42,12 @@ async def stream_mcp(question: str):
 
     # client = MCPClient.from_dict(server_config)
     client = MCPClient.from_dict({})
-    llm = ChatOpenAI(model="gpt-4o", streaming=True)
+    
+    if not HF_TOKEN:
+        llm = ChatOpenAI(model="gpt-4o", streaming=True)
+    else:
+        llm = ChatOpenAI(model="openai/gpt-oss-120b:cerebras", streaming=True, api_key=HF_TOKEN, base_url="https://router.huggingface.co/v1")
+    
     agent = MCPAgent(llm=llm, client=client, max_steps=30)
 
     yield _sse(event="status", data={"message": "starting"})
