@@ -1,31 +1,22 @@
-import os
 import time
 from typing import Iterable
 
-import openai
 from openai import OpenAI
 
+from services import MODEL_NAME, API_KEY, BASE_URL
 from utils.common import sse, heartbeat
 
+client = OpenAI(
+    base_url=BASE_URL,
+    api_key=API_KEY,
+)
 
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-HF_TOKEN = os.environ.get("HF_TOKEN", "")
-
-if not HF_TOKEN:
-    client = OpenAI()
-    model_name="gpt-4o"
-else:
-    client = OpenAI(
-        base_url="https://api.groq.com/openai/v1",
-        api_key=HF_TOKEN,
-    )
-    model_name="openai/gpt-oss-120b"
 
 class OpenAIService:
     @staticmethod
     def sumary_files():
         response = client.responses.create(
-            model=model_name,
+            model=MODEL_NAME,
             input=[
                 {
                     "role": "user",
@@ -54,12 +45,12 @@ class OpenAIService:
         rid = f"resp_{int(time.time() * 1000)}"
 
         # 1) start
-        yield sse("start", {"id": rid, "model": model_name, "created": int(time.time())})
+        yield sse("start", {"id": rid, "model": MODEL_NAME, "created": int(time.time())})
 
         last_heartbeat = time.time()
         try:
             stream = client.chat.completions.create(
-                model=model_name,
+                model=MODEL_NAME,
                 messages=[
                     {"role": "system", "content": "You are a helpful assistant."},
                     {"role": "user", "content": prompt},

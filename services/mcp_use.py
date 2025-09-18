@@ -1,12 +1,10 @@
 import json
 
-import os
-
-from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from mcp_use import MCPClient, MCPAgent
 
 from configs.server import server_config
+from services import API_KEY, MODEL_NAME, BASE_URL
 
 
 # ========= SSE helper =========
@@ -40,19 +38,12 @@ async def stream_mcp(question: str):
     Streams MCP agent steps. Final event returns the *original* last observation:
       {"observation": <raw observation from tool>}
     """
-    load_dotenv()
 
     client = MCPClient.from_dict(server_config)
     # client = MCPClient.from_dict({})
-    
-    OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-    HF_TOKEN = os.environ.get("HF_TOKEN", "")
 
-    if not HF_TOKEN:
-        llm = ChatOpenAI(model="gpt-4o", streaming=True)
-    else:
-        llm = ChatOpenAI(model="gemma2-9b-it", streaming=True, api_key=HF_TOKEN, base_url="https://api.groq.com/openai/v1")
-    
+    llm = ChatOpenAI(model=MODEL_NAME, streaming=True, api_key=API_KEY, base_url=BASE_URL)
+
     agent = MCPAgent(llm=llm, client=client, max_steps=30)
 
     yield _sse(event="status", data={"message": "starting"})
