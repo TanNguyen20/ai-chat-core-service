@@ -40,9 +40,12 @@ async def stream_mcp(question: str):
     """
     load_dotenv()
 
-    # client = MCPClient.from_dict(server_config)
-    client = MCPClient.from_dict({})
+    client = MCPClient.from_dict(server_config)
+    # client = MCPClient.from_dict({})
     
+    OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+    HF_TOKEN = os.environ.get("HF_TOKEN", "")
+
     if not HF_TOKEN:
         llm = ChatOpenAI(model="gpt-4o", streaming=True)
     else:
