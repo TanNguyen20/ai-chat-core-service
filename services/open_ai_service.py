@@ -16,10 +16,10 @@ if not HF_TOKEN:
     model_name="gpt-4o"
 else:
     client = OpenAI(
-        base_url="https://router.huggingface.co/v1",
+        base_url="https://api.groq.com/openai/v1",
         api_key=HF_TOKEN,
     )
-    model_name="openai/gpt-oss-120b:cerebras"
+    model_name="openai/gpt-oss-120b"
 
 class OpenAIService:
     @staticmethod
