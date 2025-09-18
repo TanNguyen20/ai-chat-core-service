@@ -1,5 +1,7 @@
 import json
 
+import os
+
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from mcp_use import MCPClient, MCPAgent
