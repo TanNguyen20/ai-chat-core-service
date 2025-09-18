@@ -51,7 +51,7 @@ async def stream_mcp(question: str):
     if not HF_TOKEN:
         llm = ChatOpenAI(model="gpt-4o", streaming=True)
     else:
-        llm = ChatOpenAI(model="openai/gpt-oss-120b", streaming=True, api_key=HF_TOKEN, base_url="https://api.groq.com/openai/v1")
+        llm = ChatOpenAI(model="llama-3.3-70b-versatile", streaming=True, api_key=HF_TOKEN, base_url="https://api.groq.com/openai/v1")
     
     agent = MCPAgent(llm=llm, client=client, max_steps=30)
 
